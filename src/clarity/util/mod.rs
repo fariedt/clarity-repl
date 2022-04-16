@@ -27,6 +27,7 @@ pub mod hash;
 pub mod pair;
 pub mod retry;
 pub mod secp256k1;
+pub mod trace;
 pub mod uint;
 
 use std::error;

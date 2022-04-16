@@ -97,6 +97,7 @@ pub struct GlobalContext<'a> {
     pub coverage_reporting: Option<TestCoverageReport>,
     pub costs_reporting: Option<CostsReport>,
     pub eval_hooks: Option<Vec<Box<dyn EvalHook>>>,
+    pub simulate: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -1204,6 +1205,7 @@ impl<'a> GlobalContext<'a> {
             coverage_reporting: None,
             costs_reporting: None,
             eval_hooks: Some(Vec::new()),
+            simulate: false,
         }
     }
 

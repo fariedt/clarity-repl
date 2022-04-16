@@ -17,10 +17,11 @@ use crate::clarity::diagnostic::{Diagnostic, Level};
 use crate::clarity::errors::Error;
 use crate::clarity::events::*;
 use crate::clarity::representations::SymbolicExpressionType::{Atom, List};
-use crate::clarity::representations::{Span, SymbolicExpression};
+use crate::clarity::representations::{Span, SymbolicExpression, SymbolicExpressionType};
 use crate::clarity::types::{
     self, PrincipalData, QualifiedContractIdentifier, StandardPrincipalData, Value,
 };
+use crate::clarity::util::trace::trace;
 use crate::clarity::util::StacksAddress;
 use crate::clarity::{self, EvalHook};
 use crate::clarity::{analysis::AnalysisDatabase, database::ClarityBackingStore};
@@ -43,6 +44,7 @@ pub struct ClarityInterpreter {
     accounts: BTreeSet<String>,
     tokens: BTreeMap<String, BTreeMap<String, u128>>,
     repl_settings: repl::Settings,
+    simulate: bool,
 }
 
 trait Equivalent {
@@ -95,6 +97,7 @@ impl ClarityInterpreter {
     pub fn new(
         tx_sender: StandardPrincipalData,
         repl_settings: repl::Settings,
+        simulate: bool,
     ) -> ClarityInterpreter {
         let datastore = Datastore::new();
         let accounts = BTreeSet::new();
@@ -105,6 +108,7 @@ impl ClarityInterpreter {
             accounts,
             tokens,
             repl_settings,
+            simulate,
         }
     }
 
@@ -114,6 +118,7 @@ impl ClarityInterpreter {
         contract_identifier: QualifiedContractIdentifier,
         cost_track: bool,
         eval_hooks: Option<Vec<Box<dyn EvalHook>>>,
+        simulate: bool,
     ) -> Result<ExecutionResult, Vec<Diagnostic>> {
         let (mut ast, mut diagnostics, success) = self.build_ast(
             contract_identifier.clone(),
@@ -146,6 +151,7 @@ impl ClarityInterpreter {
             analysis,
             cost_track,
             eval_hooks,
+            simulate,
         ) {
             Ok(result) => result,
             Err((_, Some(diagnostic), _)) => {
@@ -200,6 +206,7 @@ impl ClarityInterpreter {
             analysis,
             cost_track,
             eval_hooks,
+            false,
         ) {
             Ok(result) => result,
             Err((_, Some(diagnostic), _)) => {
@@ -446,6 +453,7 @@ https://github.com/hirosystems/clarinet/issues/new/choose"#
         contract_analysis: ContractAnalysis,
         cost_track: bool,
         eval_hooks: Option<Vec<Box<dyn EvalHook>>>,
+        simulate: bool,
     ) -> Result<ExecutionResult, (String, Option<Diagnostic>, Option<Error>)> {
         let mut execution_result = ExecutionResult::default();
         let mut contract_saved = false;
@@ -470,6 +478,7 @@ https://github.com/hirosystems/clarinet/issues/new/choose"#
             };
             let mut global_context = GlobalContext::new(false, conn, cost_tracker);
             global_context.eval_hooks = eval_hooks;
+            global_context.simulate = simulate;
             global_context.begin();
 
             let result = global_context.execute(|g| {
@@ -505,12 +514,38 @@ https://github.com/hirosystems/clarinet/issues/new/choose"#
                                     let evaluated_arg = eval(arg, &mut env, &context)?;
                                     args.push(SymbolicExpression::atom_value(evaluated_arg));
                                 }
+
+                                let contract = if contract_identifier.to_string().starts_with(".") {
+                                    contract_identifier.to_string()
+                                } else {
+                                    "'".to_owned() + &contract_identifier.to_string()
+                                };
+
+                                let mut fn_args = vec![contract];
+                                fn_args.push(method.to_string());
+                                for arg in &args {
+                                    if let SymbolicExpressionType::AtomValue(Value::Principal(_)) =
+                                        &arg.expr
+                                    {
+                                        fn_args.push(format!("'{}", &arg))
+                                    } else {
+                                        fn_args.push(format!("{}", &arg))
+                                    }
+                                }
+
+                                trace(&env, "contract-call?", &fn_args);
+
                                 let res = env.execute_contract(
                                     &contract_identifier,
                                     &method,
                                     &args,
                                     false,
                                 )?;
+
+                                if g.simulate {
+                                    println!("1 <- {}", &res);
+                                }
+
                                 res
                             }
                             _ => eval(&contract_ast.expressions[0], &mut env, &context).unwrap(),
@@ -696,7 +731,14 @@ https://github.com/hirosystems/clarinet/issues/new/choose"#
                     .set_contract_data_size(&contract_identifier, 0)
                     .unwrap();
             }
-            global_context.commit().unwrap();
+
+            if global_context.simulate {
+                accounts_to_credit.truncate(0);
+                accounts_to_debit.truncate(0);
+                global_context.roll_back();
+            } else {
+                global_context.commit().unwrap();
+            }
 
             (value, global_context.eval_hooks)
         };

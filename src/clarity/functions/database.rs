@@ -20,6 +20,8 @@ use crate::clarity::types::{
 use crate::clarity::StacksBlockId;
 use crate::clarity::{eval, Environment, LocalContext};
 
+use crate::clarity::util::trace::{call_depth, trace};
+
 pub fn special_contract_call(
     args: &[SymbolicExpression],
     env: &mut Environment,
@@ -136,6 +138,24 @@ pub fn special_contract_call(
 
     let contract_principal = env.contract_context.contract_identifier.clone().into();
 
+    let contract = if contract_identifier.to_string().starts_with(".") {
+        contract_identifier.to_string()
+    } else {
+        "'".to_owned() + &contract_identifier.to_string()
+    };
+
+    let mut fn_args = vec![contract];
+    fn_args.push(function_name.to_string());
+    for arg in &rest_args {
+        if let SymbolicExpressionType::AtomValue(Value::Principal(_)) = &arg.expr {
+            fn_args.push(format!("'{}", &arg))
+        } else {
+            fn_args.push(format!("{}", &arg))
+        }
+    }
+
+    trace(env, "contract-call?", &fn_args);
+
     let mut nested_env = env.nest_with_caller(contract_principal);
     let result = if nested_env.short_circuit_contract_call(
         &contract_identifier,
@@ -158,6 +178,11 @@ pub fn special_contract_call(
                 CheckErrors::ReturnTypesMustMatch(returns_type_signature, actual_returns).into(),
             );
         }
+    }
+
+    if env.global_context.simulate {
+        let depth = call_depth(env);
+        println!("{}{} <- {}", "| ".repeat(depth), depth + 1, &result);
     }
 
     Ok(result)
@@ -219,6 +244,12 @@ pub fn special_set_variable(
         env,
         data_types.value_type.size(),
     )?;
+
+    trace(
+        env,
+        "var-set",
+        &vec![var_name.to_string(), value.to_string()],
+    );
 
     env.add_memory(value.get_memory_use())?;
 
@@ -315,6 +346,12 @@ pub fn special_set_entry(
         data_types.value_type.size() + data_types.key_type.size(),
     )?;
 
+    trace(
+        env,
+        "map-set",
+        &vec![map_name.to_string(), key.to_string(), value.to_string()],
+    );
+
     env.add_memory(key.get_memory_use())?;
     env.add_memory(value.get_memory_use())?;
 
@@ -354,6 +391,12 @@ pub fn special_insert_entry(
         data_types.value_type.size() + data_types.key_type.size(),
     )?;
 
+    trace(
+        env,
+        "map-insert",
+        &vec![map_name.to_string(), key.to_string(), value.to_string()],
+    );
+
     env.add_memory(key.get_memory_use())?;
     env.add_memory(value.get_memory_use())?;
 
@@ -390,6 +433,12 @@ pub fn special_delete_entry(
         env,
         data_types.key_type.size(),
     )?;
+
+    trace(
+        env,
+        "map-delete",
+        &vec![map_name.to_string(), key.to_string()],
+    );
 
     env.add_memory(key.get_memory_use())?;
 

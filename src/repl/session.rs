@@ -84,7 +84,7 @@ impl Session {
             session_id: 0,
             started_at: 0,
             is_interactive: false,
-            interpreter: ClarityInterpreter::new(tx_sender, settings.repl_settings.clone()),
+            interpreter: ClarityInterpreter::new(tx_sender, settings.repl_settings.clone(), false),
             asts: BTreeMap::new(),
             contracts: BTreeMap::new(),
             api_reference: build_api_reference(),
@@ -351,6 +351,7 @@ impl Session {
                     true,
                     None,
                     None,
+                    false,
                 ) {
                     Ok((mut logs, _)) => output.append(&mut logs),
                     Err(ref mut result) => {
@@ -489,6 +490,7 @@ impl Session {
                 false,
                 None,
                 None,
+                false,
             )
             .expect("Unable to deploy POX");
         }
@@ -503,6 +505,7 @@ impl Session {
                 false,
                 None,
                 None,
+                false,
             )
             .expect("Unable to deploy BNS");
         }
@@ -517,6 +520,7 @@ impl Session {
                 false,
                 None,
                 None,
+                false,
             )
             .expect("Unable to deploy COSTS");
         }
@@ -531,6 +535,7 @@ impl Session {
                 false,
                 None,
                 None,
+                false,
             )
             .expect("Unable to deploy COSTS");
         }
@@ -585,6 +590,7 @@ impl Session {
             }
             cmd if cmd.starts_with("::get_assets_maps") => self.get_accounts(&mut output),
             cmd if cmd.starts_with("::get_costs") => self.get_costs(&mut output, cmd),
+            cmd if cmd.starts_with("::simulate") => self.simulate(&mut output, cmd),
             cmd if cmd.starts_with("::get_contracts") => self.get_contracts(&mut output),
             cmd if cmd.starts_with("::get_block_height") => self.get_block_height(&mut output),
             cmd if cmd.starts_with("::advance_chain_tip") => {
@@ -608,6 +614,7 @@ impl Session {
                         true,
                         None,
                         None,
+                        false,
                     ) {
                         Ok((mut output, result)) => {
                             if let Some((ref contract_name, _, _, _, _)) = result.contract {
@@ -632,6 +639,7 @@ impl Session {
         cost_track: bool,
         eval_hooks: Option<Vec<Box<dyn EvalHook>>>,
         test_name: Option<String>,
+        simulate: bool,
     ) -> Result<(Vec<String>, ExecutionResult), Vec<String>> {
         let light_red = Colour::Red.bold();
 
@@ -641,6 +649,7 @@ impl Session {
             eval_hooks,
             cost_track,
             test_name,
+            simulate,
         );
         let mut output = Vec::<String>::new();
         let lines = snippet.lines();
@@ -689,6 +698,7 @@ impl Session {
             true,
             Some(vec![Box::new(debugger)]),
             None,
+            false,
         ) {
             Ok((mut output, result)) => {
                 if let Some((ref contract_name, _, _, _, _)) = result.contract {
@@ -712,6 +722,7 @@ impl Session {
         self.interpreter = ClarityInterpreter::new(
             self.interpreter.get_tx_sender(),
             self.settings.repl_settings.clone(),
+            false,
         );
         let contracts = std::mem::take(&mut self.settings.initial_contracts);
 
@@ -822,7 +833,7 @@ impl Session {
         );
 
         self.set_tx_sender(sender.into());
-        let result = self.interpret(snippet, None, None, true, Some(test_name.clone()))?;
+        let result = self.interpret(snippet, None, None, true, Some(test_name.clone()), false)?;
         if let Some(ref cost) = result.cost {
             self.costs_reports.push(CostsReport {
                 test_name,
@@ -921,6 +932,7 @@ impl Session {
         mut eval_hooks: Option<Vec<Box<dyn EvalHook>>>,
         cost_track: bool,
         test_name: Option<String>,
+        simulate: bool,
     ) -> Result<ExecutionResult, Vec<Diagnostic>> {
         let (contract_name, is_tx) = match name {
             Some(name) => (name, false),
@@ -948,7 +960,7 @@ impl Session {
 
         match self
             .interpreter
-            .run(snippet, contract_identifier.clone(), cost_track, eval_hooks)
+            .run(snippet, contract_identifier.clone(), cost_track, eval_hooks, simulate)
         {
             Ok(result) => {
                 if let Some(ref coverage) = result.coverage {
@@ -1135,7 +1147,7 @@ impl Session {
             _ => return output.push(red!("Usage: ::encode <expr>")),
         };
 
-        let result = self.interpret(snippet.to_string(), None, None, false, None);
+        let result = self.interpret(snippet.to_string(), None, None, false, None, false);
         let value = match result {
             Ok(result) => {
                 let mut tx_bytes = vec![];
@@ -1182,10 +1194,21 @@ impl Session {
     }
 
     #[cfg(feature = "cli")]
+    pub fn simulate(&mut self, output: &mut Vec<String>, cmd: &str) {
+        let snippet = cmd.to_string().split_off("::simulate ".len());
+        let (mut result, cost) =
+            match self.formatted_interpretation(snippet, None, false, None, None, true) {
+                Ok((output, result)) => (output, result.cost.clone()),
+                Err(output) => (output, None),
+            };
+        output.append(&mut result);
+    }
+
+    #[cfg(feature = "cli")]
     pub fn get_costs(&mut self, output: &mut Vec<String>, cmd: &str) {
         let snippet = cmd.to_string().split_off("::get_costs ".len());
         let (mut result, cost) =
-            match self.formatted_interpretation(snippet, None, true, None, None) {
+            match self.formatted_interpretation(snippet, None, true, None, None, false) {
                 Ok((output, result)) => (output, result.cost.clone()),
                 Err(output) => (output, None),
             };
@@ -1595,7 +1618,7 @@ mod tests {
 
             (define-read-only (get-x)
                 (var-get x))
-            
+
             (define-public (incr)
                 (begin
                     (var-set x (+ (var-get x) u1))
