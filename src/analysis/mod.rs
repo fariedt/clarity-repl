@@ -3,6 +3,7 @@ pub mod ast_dependency_detector;
 pub mod ast_visitor;
 pub mod call_checker;
 pub mod check_checker;
+pub mod unused_checker;
 
 use serde::de::Deserialize;
 use serde::Serialize;
@@ -15,6 +16,7 @@ use crate::clarity::diagnostic::Diagnostic;
 use self::ast_dependency_detector::ASTDependencyDetector;
 use self::call_checker::CallChecker;
 use self::check_checker::CheckChecker;
+use self::unused_checker::UnusedChecker;
 
 pub type AnalysisResult = Result<Vec<Diagnostic>, Vec<Diagnostic>>;
 
@@ -23,12 +25,14 @@ pub type AnalysisResult = Result<Vec<Diagnostic>, Vec<Diagnostic>>;
 pub enum Pass {
     All,
     CheckChecker,
+    UnusedChecker,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct Settings {
     passes: Vec<Pass>,
     check_checker: check_checker::Settings,
+    unused_checker: unused_checker::Settings,
 }
 
 impl Settings {
@@ -62,10 +66,11 @@ pub enum OneOrList<T> {
 pub struct SettingsFile {
     passes: Option<OneOrList<Pass>>,
     check_checker: Option<check_checker::SettingsFile>,
+    unused_checker: Option<unused_checker::SettingsFile>,
 }
 
 // Each new pass should be included in this list
-static ALL_PASSES: [Pass; 1] = [Pass::CheckChecker];
+static ALL_PASSES: [Pass; 2] = [Pass::CheckChecker, Pass::UnusedChecker];
 
 impl From<SettingsFile> for Settings {
     fn from(from_file: SettingsFile) -> Self {
@@ -94,9 +99,16 @@ impl From<SettingsFile> for Settings {
             check_checker::Settings::default()
         };
 
+        let unused_settings = if let Some(unused_settings) = from_file.unused_checker {
+            unused_checker::Settings::from(unused_settings)
+        } else {
+            unused_checker::Settings::default()
+        };
+
         Self {
             passes,
             check_checker: checker_settings,
+            unused_checker: unused_settings,
         }
     }
 }
@@ -128,6 +140,7 @@ pub fn run_analysis(
     for pass in &settings.passes {
         match pass {
             Pass::CheckChecker => passes.push(CheckChecker::run_pass),
+            Pass::UnusedChecker => passes.push(UnusedChecker::run_pass),
             Pass::All => panic!("unexpected All in list of passes"),
         }
     }
