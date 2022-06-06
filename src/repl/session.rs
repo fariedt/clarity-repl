@@ -28,6 +28,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "cli")]
+use prettytable::format::FormatBuilder;
+#[cfg(feature = "cli")]
 use prettytable::{Cell, Row, Table};
 
 use super::SessionSettings;
@@ -928,74 +930,44 @@ impl Session {
     }
 
     fn display_help(&self, output: &mut Vec<String>) {
+        // style: Fy
         let help_colour = Colour::Yellow;
+        // style: FB
         let coming_soon_colour = Colour::Black.bold();
-        output.push(format!(
-            "{}",
-            help_colour.paint("::help\t\t\t\t\tDisplay help")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint(
-                "::list_functions\t\t\tDisplay all the native functions available in clarity"
-            )
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint(
-                "::describe_function <function>\t\tDisplay documentation for a given native function fn-name"
-            )
-        ));
-        output.push(format!(
-            "{}",
-            help_colour
-                .paint("::mint_stx <principal> <amount>\t\tMint STX balance for a given principal")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::set_tx_sender <principal>\t\tSet tx-sender variable to principal")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::get_assets_maps\t\t\tGet assets maps for active accounts")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::get_costs <expr>\t\t\tDisplay the cost analysis")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::get_contracts\t\t\t\tGet contracts")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::get_block_height\t\t\tGet current block height")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::advance_chain_tip <count>\t\tSimulate mining of <count> blocks")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::toggle_costs\t\t\t\tDisplay cost analysis after every expression")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour
-                .paint("::debug <expr>\t\t\t\tStart an interactive debug session executing <expr>")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::trace <expr>\t\t\t\tGenerate an execution trace for <expr>")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::reload \t\t\t\tReload the existing contract(s) in the session")
-        ));
-        output.push(format!(
-            "{}",
-            help_colour.paint("::read <filename>\t\t\t\tRead expressions from a file")
-        ));
+        let mut table = Table::new();
+
+        // like format::FORMAT_CLEAN but with no padding on the left
+        table.set_format(FormatBuilder::new().padding(0, 4).build());
+
+        table.add_row(row![Fy => "::help", "Display help"]);
+        table.add_row(
+            row![Fy => "::list_functions", "Display all the native functions available in clarity"],
+        );
+        table.add_row(row![Fy => "::describe_function <function>", "Display documentation for a given native function fn-name"]);
+        table.add_row(
+            row![Fy => "::mint_stx <principal> <amount>", "Mint STX balance for a given principal"],
+        );
+        table.add_row(
+            row![Fy => "::set_tx_sender <principal>", "Set tx-sender variable to principal"],
+        );
+        table.add_row(row![Fy => "::get_assets_maps", "Get assets maps for active accounts"]);
+        table.add_row(row![Fy => "::get_costs <expr>", "Display the cost analysis"]);
+        table.add_row(row![Fy => "::get_contracts", "Get contracts"]);
+        table.add_row(row![Fy => "::get_block_height", "Get current block height"]);
+        table.add_row(
+            row![Fy => "::advance_chain_tip <count>", "Simulate mining of <count> blocks"],
+        );
+        table.add_row(row![Fy => "::toggle_costs", "Display cost analysis after every expression"]);
+        table.add_row(
+            row![Fy => "::debug <expr>", "Start an interactive debug session executing <expr>"],
+        );
+        table.add_row(row![Fy => "::trace <expr>", "Generate an execution trace for <expr>"]);
+        table.add_row(row![Fy => "::reload", "Reload the existing contract(s) in the session"]);
+        table.add_row(row![Fy => "::read", "Read expressions from a file"]);
+
+        table.printstd();
+
+        // output.push(table.to_string());
     }
 
     fn parse_and_advance_chain_tip(&mut self, output: &mut Vec<String>, command: &str) {
@@ -1492,7 +1464,7 @@ mod tests {
 
             (define-read-only (get-x)
                 (var-get x))
-            
+
             (define-public (incr)
                 (begin
                     (var-set x (+ (var-get x) u1))
